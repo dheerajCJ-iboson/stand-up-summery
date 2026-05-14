@@ -1,0 +1,19 @@
+Here's a stand-up summary based on your commits:
+
+---
+
+**Stand-up Summary**
+
+**1. What I did today:**
+
+*   **Transaction History Enhancements (car-wash-node-api-admin-panel, car-wash-node-api-order):**
+    *   Enhanced transaction history queries to include additional order details, list prices, and discount names.
+    *   Resolved SQL query filtering issues to ensure proper transaction data retrieval.
+*   **API Sorting Functionality (car-wash-node-api-fleet, car-wash-node-api-package):**
+    *   Implemented dynamic sorting for fleet retrieval based on `sort_order_id`, including validation.
+    *   Added comprehensive sorting options for addon packages by various fields and implemented unique name validation for sort orders.
+
+**2. Key highlights:**
+
+*   Completed significant improvements to transaction history data accuracy and detail across admin and order APIs.
+*   Successfully integrated dynamic sorting capabilities for both Fleet and Package APIs, enhancing data presentation and management.

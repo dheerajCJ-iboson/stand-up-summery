@@ -1,0 +1,7 @@
+**What I accomplished on 30-04-2026:**
+-   Improved sorting functionality across core services, enhancing how prices, discounts, and packages are ordered to prioritize custom pricing, handle case sensitivity, and correctly manage null values.
+-   Enhanced fleet management with new sorting capabilities for fleet names, introducing descending order options and ensuring accurate, case-insensitive comparisons.
+
+**Key Highlights:**
+-   Significantly improved data ordering and presentation by refining sorting logic for key business entities like prices, discounts, and packages.
+-   Introduced more flexible and accurate sorting options for fleet names, improving data usability.

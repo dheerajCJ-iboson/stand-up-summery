@@ -1,0 +1,16 @@
+Here's a concise stand-up summary based on your commits:
+
+---
+
+**Stand-up Summary**
+
+**1. What I did today:**
+*   Primarily focused on developing and integrating the new **Discount Management System**.
+*   Implemented core **CRUD operations**, **validation middleware**, and **availability checks** for discounts.
+*   Configured new **Express routes** for discount management and created a **Postman collection** for API testing.
+*   Performed some cleanup by **removing a deprecated file** and its references.
+
+**2. Key highlights:**
+*   Successfully completed the initial implementation of the **Discount Management Module**, including its API and service layer.
+*   The module integrates robust **admin context and ownership resolution**, providing a secure and functional foundation.
+*   New discount routes are now fully integrated and ready for testing with the provided Postman collection.
