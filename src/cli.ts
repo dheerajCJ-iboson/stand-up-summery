@@ -1,7 +1,7 @@
 import { parse } from "@std/flags";
 import { config } from "./config/env.ts";
 import { getGitCommits } from "./git.ts";
-import { generateStandupSummary } from "./gemini.ts";
+import { generateStandupSummary } from "./summary.ts";
 
 export async function runCli() {
   const now = new Date();
@@ -42,12 +42,14 @@ export async function runCli() {
     }
 
     console.log(
-      `✅ Found ${commits.length} commits across nested repositories. Generating summary with Gemini...`,
+      `✅ Found ${commits.length} commits across nested repositories. Generating summary with ${config.llm.provider}:${config.llm.model}...`,
     );
 
     const summary = await generateStandupSummary(commits, dateInput);
 
-    const outputFileName = `${dateInput}-summery.txt`;
+    const outputDir = "summery";
+    await Deno.mkdir(outputDir, { recursive: true });
+    const outputFileName = `${outputDir}/${dateInput}-summery.txt`;
     await Deno.writeTextFile(outputFileName, summary);
 
     console.log(`\n✨ Stand-up Summery saved to ${outputFileName}\n`);

@@ -1,5 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { config } from "./config/env.ts";
+import { createLlmProvider } from "./llm/index.ts";
 import { CommitInfo } from "./git.ts";
 import { STANDUP_PROMPT_TEMPLATE } from "./config/prompts.ts";
 
@@ -33,30 +32,33 @@ export async function generateStandupSummary(
     return "No commits found for the specified date and author.";
   }
 
-  const genAI = new GoogleGenerativeAI(config.geminiApiKey);
-  const model = genAI.getGenerativeModel({ model: config.modelName });
+  const llm = createLlmProvider();
 
-  const commitData = commits
-    .map((c) => {
-      const branches = c.branches.length ? ` [${c.branches.join(", ")}]` : "";
-      return `- ${c.repoName}: ${c.subject}${branches}`;
+  const byApp = new Map<string, CommitInfo[]>();
+  for (const c of commits) {
+    if (c.isMerge) continue;
+    byApp.set(c.appName, [...(byApp.get(c.appName) ?? []), c]);
+  }
+
+  const commitData = [...byApp.entries()]
+    .map(([app, list]) => {
+      const lines = list.map((c) => {
+        const areas = c.areas.length ? ` | areas: ${c.areas.join(", ")}` : "";
+        const files = c.files.length ? `\n    files: ${c.files.join(", ")}` : "";
+        return `  - ${c.subject}${areas}${files}`;
+      });
+      return `## APP: ${app}\n${lines.join("\n")}`;
     })
-    .join("\n");
+    .join("\n\n");
 
   const prompt = STANDUP_PROMPT_TEMPLATE(commitData, date);
 
   try {
-    const result = await retryWithBackoff(
-      () => model.generateContent(prompt),
-      10,
-      1000,
-    );
-    const response = await result.response;
-    return response.text();
+    return await retryWithBackoff(() => llm.generate(prompt), 10, 1000);
   } catch (error) {
     if (error instanceof Error) {
-      return `Error generating summary from Gemini: ${error.message}`;
+      return `Error generating summary from LLM: ${error.message}`;
     }
-    return "An unknown error occurred while calling Gemini API.";
+    return "An unknown error occurred while calling the LLM API.";
   }
 }

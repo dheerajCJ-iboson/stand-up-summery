@@ -18,6 +18,9 @@ coverage/
 .DS_Store
 Thumbs.db
 
+# Generated stand-up summaries
+summery/
+*-summery.txt
 # Logs and temp
 *.log
 .tmp/

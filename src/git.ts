@@ -1,4 +1,4 @@
-import { basename, join, resolve } from "@std/path";
+import { basename, join, relative, resolve } from "@std/path";
 
 export interface CommitInfo {
   hash: string;
@@ -6,6 +6,35 @@ export interface CommitInfo {
   branches: string[];
   repoPath: string;
   repoName: string;
+  /** Human-friendly app name (package name, or path relative to the scan root). */
+  appName: string;
+  /** Changed files, trimmed to a reasonable count. */
+  files: string[];
+  /** Top-level areas/folders touched (e.g. "api", "docs", "deploy"). */
+  areas: string[];
+  isMerge: boolean;
+}
+
+const MAX_FILES_PER_COMMIT = 15;
+
+async function runGit(cwd: string, args: string[]): Promise<string> {
+  const out = await new Deno.Command("git", { args, cwd }).output();
+  return new TextDecoder().decode(out.stdout).trim();
+}
+
+async function detectAppName(repoPath: string, rootPath: string): Promise<string> {
+  const fallback = relative(rootPath, repoPath) || basename(repoPath);
+  for (const file of ["package.json", "deno.json"]) {
+    try {
+      const json = JSON.parse(await Deno.readTextFile(join(repoPath, file)));
+      if (typeof json.name === "string" && json.name) {
+        return json.name === fallback ? json.name : `${json.name} (${fallback})`;
+      }
+    } catch {
+      // file missing or invalid, try next
+    }
+  }
+  return fallback;
 }
 
 const DEFAULT_IGNORE_DIRS = ["node_modules", ".git", "dist", "build"];
@@ -26,13 +55,15 @@ async function getGitCommitsFromRepo(
   repoPath: string,
   author: string,
   date: string,
+  rootPath: string,
 ): Promise<CommitInfo[]> {
+  const appName = await detectAppName(repoPath, rootPath);
   const { since, until } = formatDateRange(date);
   const args = [
     "log",
     `--since=${since}`,
     `--until=${until}`,
-    "--pretty=format:%H%x1f%s",
+    "--pretty=format:%H%x1f%s%x1f%P",
   ];
   if (author) {
     args.push(`--author=${author}`);
@@ -53,11 +84,10 @@ async function getGitCommitsFromRepo(
   if (!output) return [];
 
   const commitLines = output.split("\n").filter((line) => line.length > 0);
-  console.log("commitLines",commitLines);
   const commits: CommitInfo[] = [];
 
   for (const line of commitLines) {
-    const [hash, subject = ""] = line.split("\x1f");
+    const [hash, subject = "", parents = ""] = line.split("\x1f");
     if (!hash) continue;
 
     const branchCommand = new Deno.Command("git", {
@@ -71,12 +101,27 @@ async function getGitCommitsFromRepo(
       .map((b) => b.trim())
       .filter((b) => b.length > 0);
 
+    const isMerge = parents.trim().split(/\s+/).filter(Boolean).length > 1;
+    const allFiles = isMerge
+      ? []
+      : (await runGit(repoPath, ["show", "--name-only", "--pretty=format:", hash]))
+        .split("\n")
+        .map((f) => f.trim())
+        .filter(Boolean);
+    const areas = [
+      ...new Set(allFiles.map((f) => (f.includes("/") ? f.split("/")[0] : "(root)"))),
+    ];
+
     commits.push({
       hash,
       subject,
       branches,
       repoPath,
       repoName: basename(repoPath),
+      appName,
+      files: allFiles.slice(0, MAX_FILES_PER_COMMIT),
+      areas,
+      isMerge,
     });
   }
 
@@ -132,9 +177,10 @@ export async function getGitCommits(
       throw new Error(`No git repositories found in ${repoPath}`);
     }
 
+    const rootPath = resolve(repoPath === "." ? Deno.cwd() : repoPath);
     const allCommits: CommitInfo[] = [];
     for (const repository of repositories) {
-      const repoCommits = await getGitCommitsFromRepo(repository, author, date);
+      const repoCommits = await getGitCommitsFromRepo(repository, author, date, rootPath);
       allCommits.push(...repoCommits);
     }
 
