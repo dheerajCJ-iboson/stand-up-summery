@@ -6,8 +6,10 @@ import type { LlmProvider } from "./types.ts";
 
 export type { LlmProvider } from "./types.ts";
 
-export function createLlmProvider(): LlmProvider {
-  const { provider, model } = config.llm;
+export function createLlmProvider(
+  provider = config.llm.provider,
+  model = config.llm.model,
+): LlmProvider {
   switch (provider) {
     case "gemini":
       return createGeminiProvider(config.geminiApiKey, model);

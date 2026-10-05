@@ -1,21 +1,11 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+// Quick check that the configured LLM provider responds: `deno run -A test_models.ts`
 import { config } from "./src/config/env.ts";
+import { createLlmProvider } from "./src/llm/index.ts";
 
-async function listModels() {
-  if (!config.geminiApiKey) {
-    console.error("No API key found.");
-    return;
-  }
-  const genAI = new GoogleGenerativeAI(config.geminiApiKey);
-  try {
-    const models = await genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    // Actually, the SDK doesn't have a simple listModels in the main export sometimes 
-    // or it's on the client. 
-    // Let's just try gemini-1.5-flash-latest or gemini-1.5-pro
-    console.log("Testing model names...");
-  } catch (e) {
-    console.error(e);
-  }
+const llm = createLlmProvider();
+console.log(`Testing ${llm.label} ...`);
+try {
+  console.log(await llm.generate("Reply with the single word: ok"));
+} catch (e) {
+  console.error(`Failed (${config.llm.provider}):`, (e as Error).message);
 }
-
-listModels();

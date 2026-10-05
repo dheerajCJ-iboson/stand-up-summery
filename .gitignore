@@ -25,3 +25,6 @@ summery/
 *.log
 .tmp/
 temp/
+
+# Personal repo config (see repos.example.json)
+repos.json

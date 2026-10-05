@@ -1,131 +1,242 @@
 import { basename, join, relative, resolve } from "@std/path";
+import { config } from "./config/env.ts";
+import { loadRepoConfig, RepoConfig } from "./config/repos.ts";
+import { DateRange, rangeIncludesToday, toGitRange } from "./dates.ts";
 
 export interface CommitInfo {
   hash: string;
   subject: string;
+  date: string;
   branches: string[];
   repoPath: string;
   repoName: string;
-  /** Human-friendly app name (package name, or path relative to the scan root). */
+  /** Human-friendly app name (repos.json name, package name, or path relative to the scan root). */
   appName: string;
   /** Changed files, trimmed to a reasonable count. */
   files: string[];
   /** Top-level areas/folders touched (e.g. "api", "docs", "deploy"). */
   areas: string[];
-  isMerge: boolean;
+  /** Trimmed, noise-filtered diff. */
+  diff: string;
+  tickets: string[];
+  patchId: string;
 }
 
+export interface InProgressInfo {
+  appName: string;
+  branch: string;
+  files: string[];
+}
+
+export interface PullRequestInfo {
+  appName: string;
+  title: string;
+  branch: string;
+  state: string;
+}
+
+export interface GitData {
+  commits: CommitInfo[];
+  inProgress: InProgressInfo[];
+  prs: PullRequestInfo[];
+  repoCount: number;
+}
+
+const DEFAULT_IGNORE_DIRS = ["node_modules", ".git", "dist", "build"];
+const DEFAULT_MAX_DEPTH = 5;
 const MAX_FILES_PER_COMMIT = 15;
+const MAX_WIP_FILES = 15;
+const DIFF_EXCLUDES = [
+  ":(exclude)*.lock",
+  ":(exclude)*lock.json",
+  ":(exclude)*lock.yaml",
+  ":(exclude)*.svg",
+  ":(exclude)*.min.js",
+  ":(exclude)*.map",
+];
+const TICKET_RE = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/g;
 
-async function runGit(cwd: string, args: string[]): Promise<string> {
-  const out = await new Deno.Command("git", { args, cwd }).output();
-  return new TextDecoder().decode(out.stdout).trim();
+const decoder = new TextDecoder();
+
+async function git(
+  cwd: string,
+  args: string[],
+  stdin?: string,
+): Promise<{ ok: boolean; out: string }> {
+  const cmd = new Deno.Command("git", {
+    args,
+    cwd,
+    stdin: stdin === undefined ? "null" : "piped",
+    stdout: "piped",
+    stderr: "piped",
+  });
+  const child = cmd.spawn();
+  if (stdin !== undefined) {
+    const writer = child.stdin.getWriter();
+    await writer.write(new TextEncoder().encode(stdin));
+    await writer.close();
+  }
+  const res = await child.output();
+  return { ok: res.success, out: decoder.decode(res.stdout).trim() };
 }
 
-async function detectAppName(repoPath: string, rootPath: string): Promise<string> {
-  const fallback = relative(rootPath, repoPath) || basename(repoPath);
+function matchesConfig(list: string[], repoPath: string, rootPath: string): boolean {
+  const rel = relative(rootPath, repoPath);
+  return list.some((k) => k === basename(repoPath) || k === rel);
+}
+
+async function detectAppName(
+  repoPath: string,
+  rootPath: string,
+  repoConfig: RepoConfig,
+): Promise<string> {
+  const rel = relative(rootPath, repoPath) || basename(repoPath);
+  const friendly = repoConfig.names[basename(repoPath)] ?? repoConfig.names[rel];
+  if (friendly) return friendly;
   for (const file of ["package.json", "deno.json"]) {
     try {
       const json = JSON.parse(await Deno.readTextFile(join(repoPath, file)));
       if (typeof json.name === "string" && json.name) {
-        return json.name === fallback ? json.name : `${json.name} (${fallback})`;
+        return json.name === rel ? json.name : `${json.name} (${rel})`;
       }
     } catch {
       // file missing or invalid, try next
     }
   }
-  return fallback;
+  return rel;
 }
 
-const DEFAULT_IGNORE_DIRS = ["node_modules", ".git", "dist", "build"];
-const DEFAULT_MAX_DEPTH = 5;
-
-function formatDateRange(date: string) {
-  const [day, month, year] = date.split("-");
-  if (!day || !month || !year) {
-    throw new Error("Date must be in dd-mm-yyyy format.");
+/** Keeps only meaningful changed lines and collapses file headers. */
+function condenseDiff(patch: string, maxChars: number): { files: string[]; diff: string } {
+  const files: string[] = [];
+  const lines: string[] = [];
+  for (const line of patch.split("\n")) {
+    if (line.startsWith("diff --git ")) {
+      const path = line.split(" b/").at(-1) ?? "";
+      files.push(path);
+      lines.push(`# ${path}`);
+    } else if (
+      (line.startsWith("+") || line.startsWith("-")) &&
+      !line.startsWith("+++") && !line.startsWith("---") && line.slice(1).trim()
+    ) {
+      lines.push(line.length > 160 ? `${line.slice(0, 160)}…` : line);
+    }
   }
-  return {
-    since: `${year}-${month}-${day} 00:00:00`,
-    until: `${year}-${month}-${day} 23:59:59`,
-  };
+  let diff = lines.join("\n");
+  if (diff.length > maxChars) diff = `${diff.slice(0, maxChars)}\n…(truncated)`;
+  return { files, diff };
 }
 
-async function getGitCommitsFromRepo(
+async function getCommitsFromRepo(
   repoPath: string,
   author: string,
-  date: string,
-  rootPath: string,
+  range: DateRange,
+  appName: string,
 ): Promise<CommitInfo[]> {
-  const appName = await detectAppName(repoPath, rootPath);
-  const { since, until } = formatDateRange(date);
+  const { since, until } = toGitRange(range);
   const args = [
     "log",
+    "--all",
+    "--no-merges",
     `--since=${since}`,
     `--until=${until}`,
-    "--pretty=format:%H%x1f%s%x1f%P",
+    "--date=short",
+    "--pretty=format:%H%x1f%s%x1f%ad",
   ];
-  if (author) {
-    args.push(`--author=${author}`);
-  }
+  if (author) args.push(`--author=${author}`);
 
-  const command = new Deno.Command("git", {
-    args,
-    cwd: repoPath,
-  });
+  const log = await git(repoPath, args);
+  if (!log.ok) throw new Error(`Git log failed in ${repoPath}`);
+  if (!log.out) return [];
 
-  const { stdout, stderr, success } = await command.output();
-  if (!success) {
-    const error = new TextDecoder().decode(stderr);
-    throw new Error(`Git log failed in ${repoPath}: ${error}`);
-  }
-
-  const output = new TextDecoder().decode(stdout).trim();
-  if (!output) return [];
-
-  const commitLines = output.split("\n").filter((line) => line.length > 0);
   const commits: CommitInfo[] = [];
-
-  for (const line of commitLines) {
-    const [hash, subject = "", parents = ""] = line.split("\x1f");
+  for (const line of log.out.split("\n").filter(Boolean)) {
+    const [hash, subject = "", date = ""] = line.split("\x1f");
     if (!hash) continue;
 
-    const branchCommand = new Deno.Command("git", {
-      args: ["branch", "--contains", hash, "--format=%(refname:short)"],
-      cwd: repoPath,
-    });
-    const branchOutput = await branchCommand.output();
-    const branches = new TextDecoder()
-      .decode(branchOutput.stdout)
-      .split("\n")
-      .map((b) => b.trim())
-      .filter((b) => b.length > 0);
+    const branches = (await git(repoPath, [
+      "branch",
+      "--contains",
+      hash,
+      "--format=%(refname:short)",
+    ])).out.split("\n").map((b) => b.trim()).filter(Boolean);
 
-    const isMerge = parents.trim().split(/\s+/).filter(Boolean).length > 1;
-    const allFiles = isMerge
-      ? []
-      : (await runGit(repoPath, ["show", "--name-only", "--pretty=format:", hash]))
-        .split("\n")
-        .map((f) => f.trim())
-        .filter(Boolean);
-    const areas = [
-      ...new Set(allFiles.map((f) => (f.includes("/") ? f.split("/")[0] : "(root)"))),
-    ];
+    const patch = (await git(repoPath, [
+      "show",
+      "--unified=0",
+      "--no-color",
+      "--pretty=format:",
+      hash,
+      "--",
+      ".",
+      ...DIFF_EXCLUDES,
+    ])).out;
+
+    const { files, diff } = condenseDiff(patch, config.diffChars);
+    const patchId = patch
+      ? (await git(repoPath, ["patch-id", "--stable"], patch + "\n")).out.split(" ")[0] || hash
+      : hash;
+    const areas = [...new Set(files.map((f) => (f.includes("/") ? f.split("/")[0] : "(root)")))];
+    const tickets = [...new Set(`${subject} ${branches.join(" ")}`.match(TICKET_RE) ?? [])];
 
     commits.push({
       hash,
       subject,
+      date,
       branches,
       repoPath,
       repoName: basename(repoPath),
       appName,
-      files: allFiles.slice(0, MAX_FILES_PER_COMMIT),
+      files: files.slice(0, MAX_FILES_PER_COMMIT),
       areas,
-      isMerge,
+      diff,
+      tickets,
+      patchId,
     });
   }
-
   return commits;
+}
+
+async function getInProgress(repoPath: string, appName: string): Promise<InProgressInfo | undefined> {
+  const status = await git(repoPath, ["status", "--porcelain"]);
+  if (!status.ok || !status.out) return undefined;
+  const files = status.out.split("\n").map((l) => l.slice(3).trim()).filter(Boolean);
+  if (!files.length) return undefined;
+  const branch = (await git(repoPath, ["rev-parse", "--abbrev-ref", "HEAD"])).out;
+  return { appName, branch, files: files.slice(0, MAX_WIP_FILES) };
+}
+
+async function getPullRequests(
+  repoPath: string,
+  appName: string,
+  range: DateRange,
+): Promise<PullRequestInfo[]> {
+  try {
+    const res = await new Deno.Command("gh", {
+      args: [
+        "pr", "list", "--author", "@me", "--state", "all", "--limit", "30",
+        "--json", "title,headRefName,updatedAt,state",
+      ],
+      cwd: repoPath,
+      stdout: "piped",
+      stderr: "null",
+    }).output();
+    if (!res.success) return [];
+    const list = JSON.parse(decoder.decode(res.stdout)) as {
+      title: string;
+      headRefName: string;
+      updatedAt: string;
+      state: string;
+    }[];
+    return list
+      .filter((pr) => {
+        const updated = new Date(pr.updatedAt);
+        return pr.state === "OPEN" || (updated >= range.from && updated < new Date(range.to.getTime() + 86_400_000));
+      })
+      .map((pr) => ({ appName, title: pr.title, branch: pr.headRefName, state: pr.state }));
+  } catch {
+    return []; // gh not installed or not authenticated
+  }
 }
 
 export async function findGitRepositories(
@@ -143,9 +254,7 @@ export async function findGitRepositories(
 
     const entries: Deno.DirEntry[] = [];
     try {
-      for await (const entry of Deno.readDir(currentPath)) {
-        entries.push(entry);
-      }
+      for await (const entry of Deno.readDir(currentPath)) entries.push(entry);
     } catch {
       return;
     }
@@ -155,8 +264,7 @@ export async function findGitRepositories(
     }
 
     for (const entry of entries) {
-      if (!entry.isDirectory) continue;
-      if (ignoreDirs.includes(entry.name)) continue;
+      if (!entry.isDirectory || ignoreDirs.includes(entry.name)) continue;
       await walk(join(currentPath, entry.name), depth + 1);
     }
   }
@@ -165,26 +273,47 @@ export async function findGitRepositories(
   return [...repos].sort();
 }
 
-export async function getGitCommits(
+export async function getGitData(
   repoPath: string,
   author: string,
-  date: string,
-  maxDepth = DEFAULT_MAX_DEPTH,
-): Promise<CommitInfo[]> {
+  range: DateRange,
+  options: { maxDepth?: number; includePrs?: boolean } = {},
+): Promise<GitData> {
+  const { maxDepth = DEFAULT_MAX_DEPTH, includePrs = false } = options;
   try {
-    const repositories = await findGitRepositories(repoPath, maxDepth);
+    const rootPath = resolve(repoPath === "." ? Deno.cwd() : repoPath);
+    const repoConfig = await loadRepoConfig();
+    const repositories = (await findGitRepositories(repoPath, maxDepth)).filter(
+      (r) => !matchesConfig(repoConfig.ignore, r, rootPath),
+    );
     if (repositories.length === 0) {
       throw new Error(`No git repositories found in ${repoPath}`);
     }
 
-    const rootPath = resolve(repoPath === "." ? Deno.cwd() : repoPath);
-    const allCommits: CommitInfo[] = [];
+    const wantWip = rangeIncludesToday(range);
+    const all: CommitInfo[] = [];
+    const inProgress: InProgressInfo[] = [];
+    const prs: PullRequestInfo[] = [];
+
     for (const repository of repositories) {
-      const repoCommits = await getGitCommitsFromRepo(repository, author, date, rootPath);
-      allCommits.push(...repoCommits);
+      const appName = await detectAppName(repository, rootPath, repoConfig);
+      all.push(...await getCommitsFromRepo(repository, author, range, appName));
+      if (wantWip) {
+        const wip = await getInProgress(repository, appName);
+        if (wip) inProgress.push(wip);
+      }
+      if (includePrs) prs.push(...await getPullRequests(repository, appName, range));
     }
 
-    return allCommits;
+    // Same change cherry-picked / rebased onto several branches counts once.
+    const seen = new Set<string>();
+    const commits = all.filter((c) => {
+      if (seen.has(c.patchId)) return false;
+      seen.add(c.patchId);
+      return true;
+    });
+
+    return { commits, inProgress, prs, repoCount: repositories.length };
   } catch (error) {
     if (error instanceof Error) {
       throw new Error(`Failed to fetch git commits: ${error.message}`);

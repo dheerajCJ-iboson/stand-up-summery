@@ -1,0 +1,7 @@
+{
+  "ignore": ["stand_up_summery"],
+  "names": {
+    "ai-suite-agents-python": "AI Agents",
+    "ai-suite-node-apis": "AI Suite APIs"
+  }
+}
