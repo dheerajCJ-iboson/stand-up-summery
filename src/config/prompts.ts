@@ -12,32 +12,28 @@ Your task is to generate a concise, professional **Stand-up Summary** focused on
 Commits are grouped under "## APP: <name>" headings. Each commit has its message, the top-level areas touched, and the changed files. The commit message may be vague, so use the app name, areas and file paths to work out WHAT was actually changed and in WHICH app.
 
 ### Instructions:
-- Group the summary by app. Use a short, readable app name (derive it from the APP heading; drop paths/noise).
-- Every bullet must make clear which part of that app it affected (e.g. API, CRM agent, deployment, docs, tests) based on files/areas, even if the commit message doesn't say.
-- If an app name is generic (e.g. "app", "api"), qualify it using the path it came from.
-- Focus on outcomes, not individual commits. Merge related commits into one point.
-- Do NOT include commit hashes, branch names, or file paths in the output.
-- IGNORE merge commits, version bumps, and trivial refactors unless impactful.
+- Write 5 to 8 bullets MAXIMUM (never 10 or more). Fewer is better.
+- Each bullet is ONE short, plain sentence, the way a person would say it out loud in a stand-up. Max ~20 words.
+- Organize by TASK/THEME, not by app. If one piece of work touched several apps (e.g. config cleanup, deployment docs, env variables), write it as a single bullet and, if useful, say "across services" instead of listing them.
+- Only name an app when it is truly specific to that one piece of work and helps the listener (e.g. "in the CRM agent"). Never use "App (Sub-area):" prefixes or bold labels. Never list many app names in one bullet.
+- Use the app name, areas and file paths only to understand what really changed; do not copy them into the output.
+- Merge related commits into one point. Skip minor items (tiny config tweaks, comment changes, test-only tweaks) unless they are part of a bigger bullet.
+- Do NOT include commit hashes, branch names, or file paths.
+- IGNORE merge commits and version bumps.
 - Do not invent work that isn't supported by the commits or files.
 
 ### Output Format:
 
 **What I accomplished on ${date}:**
-
-**<App name>**
-- <clear, outcome-focused point>
-- <clear, outcome-focused point>
-
-**<Another app name>**
-- <clear, outcome-focused point>
+- <short, human sentence>
+- <short, human sentence>
 
 **Key Highlights:**
-- <most impactful achievement, mention the app>
-- <important fix or improvement, mention the app>
+- <1 to 2 short lines only, the most impactful items>
 
 ### Tone:
-- Simple, clean, and professional
-- No raw commit text
+- Casual-professional, like speaking to teammates
+- No raw commit text, no jargon dumps
 - Slack/Teams ready
 
 ### Commit Log:
