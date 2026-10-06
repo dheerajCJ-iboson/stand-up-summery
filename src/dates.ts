@@ -73,8 +73,68 @@ export function rangeIncludesToday(r: DateRange): boolean {
   return r.from <= t && t <= r.to;
 }
 
-const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+export const toIso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
 export function toGitRange(r: DateRange): { since: string; until: string } {
-  return { since: `${iso(r.from)} 00:00:00`, until: `${iso(r.to)} 23:59:59` };
+  return { since: `${toIso(r.from)} 00:00:00`, until: `${toIso(r.to)} 23:59:59` };
+}
+
+export function dayCount(r: DateRange): number {
+  return Math.round((r.to.getTime() - r.from.getTime()) / 86_400_000) + 1;
+}
+
+export function lastWeekRange(now = today()): DateRange {
+  const monday = thisWeekRange(now).from;
+  return { from: addDays(monday, -7), to: addDays(monday, -1) };
+}
+
+/** Whole month, clipped to today. `month` is 0-based. */
+export function monthRange(year: number, month: number, now = today()): DateRange {
+  const from = new Date(year, month, 1);
+  if (from > now) throw new Error("That month is in the future.");
+  const end = new Date(year, month + 1, 0);
+  return { from, to: end > now ? now : end };
+}
+
+export function thisMonthRange(now = today()): DateRange {
+  return monthRange(now.getFullYear(), now.getMonth(), now);
+}
+
+export function lastMonthRange(now = today()): DateRange {
+  const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return monthRange(d.getFullYear(), d.getMonth(), now);
+}
+
+/** Whole year, clipped to today. */
+export function yearRange(year: number, now = today()): DateRange {
+  if (new Date(year, 0, 1) > now) throw new Error("That year is in the future.");
+  const end = new Date(year, 11, 31);
+  return { from: new Date(year, 0, 1), to: end > now ? now : end };
+}
+
+export function parseMonth(input: string): { year: number; month: number } {
+  const m = /^(\d{1,2})-(\d{4})$/.exec(input.trim());
+  const month = m ? Number(m[1]) : 0;
+  if (!m || month < 1 || month > 12) throw new Error(`Invalid month "${input}". Use mm-yyyy.`);
+  return { year: Number(m[2]), month: month - 1 };
+}
+
+export function parseYear(input: string): number {
+  if (!/^\d{4}$/.test(input.trim())) throw new Error(`Invalid year "${input}". Use yyyy.`);
+  return Number(input);
+}
+
+/** Splits a range into Monday–Sunday weeks or calendar months, clipped to the range. */
+export function splitRange(r: DateRange, unit: "week" | "month"): DateRange[] {
+  const parts: DateRange[] = [];
+  let cursor = r.from;
+  while (cursor <= r.to) {
+    const naturalEnd = unit === "week"
+      ? addDays(cursor, 6 - ((cursor.getDay() + 6) % 7))
+      : new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
+    const end = naturalEnd < r.to ? naturalEnd : r.to;
+    parts.push({ from: cursor, to: end });
+    cursor = addDays(end, 1);
+  }
+  return parts;
 }

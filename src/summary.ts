@@ -1,5 +1,7 @@
 import { config } from "./config/env.ts";
+import { dayCount, DateRange, rangeLabel, splitRange, toIso } from "./dates.ts";
 import {
+  CHUNK_PROMPT_TEMPLATE,
   ROLLUP_PROMPT_TEMPLATE,
   STANDUP_PROMPT_TEMPLATE,
   VERIFY_PROMPT_TEMPLATE,
@@ -109,4 +111,35 @@ export function generateRollup(
 ): Promise<string> {
   const joined = entries.map((e) => `#### ${e.label}\n${e.text}`).join("\n\n");
   return generate(ROLLUP_PROMPT_TEMPLATE(label, joined));
+}
+
+const MAX_COMMITS_PER_CHUNK = 400;
+
+/** Long ranges: summarize each week (or month for 45+ days) from git, then merge the pieces. */
+export async function generatePeriodSummary(
+  data: GitData,
+  range: DateRange,
+  label: string,
+): Promise<string> {
+  const unit = dayCount(range) > 45 ? "month" : "week";
+  const entries: { label: string; text: string }[] = [];
+
+  for (const chunk of splitRange(range, unit)) {
+    const from = toIso(chunk.from);
+    const to = toIso(chunk.to);
+    const bucket = data.commits.filter((c) => c.date >= from && c.date <= to);
+    if (bucket.length === 0) continue;
+    const chunkLabel = rangeLabel(chunk);
+    console.log(`  • ${chunkLabel}: ${bucket.length} commits`);
+    const { commitData } = buildEvidence({
+      ...data,
+      commits: bucket.slice(0, MAX_COMMITS_PER_CHUNK),
+      inProgress: [],
+      prs: [],
+    });
+    entries.push({ label: chunkLabel, text: await generate(CHUNK_PROMPT_TEMPLATE(chunkLabel, commitData)) });
+  }
+
+  console.log("🧩 Merging into one summary...");
+  return generateRollup(label, entries);
 }

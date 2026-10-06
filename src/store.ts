@@ -1,5 +1,5 @@
 import { join } from "@std/path";
-import { DateRange, formatDate, parseDate, addDays, rangeFileName } from "./dates.ts";
+import { addDays, DateRange, formatDate, parseDate, rangeFileName } from "./dates.ts";
 
 export const SUMMARY_DIR = "summery";
 
@@ -31,13 +31,4 @@ export async function findPreviousSummary(before: Date): Promise<string | undefi
   const last = candidates.at(-1);
   if (!last) return undefined;
   return `(${formatDate(last.date)})\n${(await Deno.readTextFile(last.path)).trim()}`;
-}
-
-export async function loadSummariesInRange(
-  range: DateRange,
-): Promise<{ label: string; text: string }[]> {
-  const files = (await singleDayFiles()).filter((f) => f.date >= range.from && f.date <= range.to);
-  return Promise.all(
-    files.map(async (f) => ({ label: formatDate(f.date), text: (await Deno.readTextFile(f.path)).trim() })),
-  );
 }

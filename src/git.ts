@@ -197,6 +197,50 @@ async function getCommitsFromRepo(
   return commits;
 }
 
+/** Cheap scan for long ranges: titles and file names only, no diffs or branch lookups. */
+async function getCompactCommitsFromRepo(
+  repoPath: string,
+  author: string,
+  range: DateRange,
+  appName: string,
+): Promise<CommitInfo[]> {
+  const { since, until } = toGitRange(range);
+  const args = [
+    "log", "--all", "--no-merges", `--since=${since}`, `--until=${until}`,
+    "--date=short", "--name-only", "--pretty=format:%x1e%H%x1f%s%x1f%ad",
+  ];
+  if (author) args.push(`--author=${author}`);
+
+  const log = await git(repoPath, args);
+  if (!log.ok) throw new Error(`Git log failed in ${repoPath}`);
+  if (!log.out) return [];
+
+  const noise = /(\.lock|lock\.json|lock\.yaml|\.svg|\.min\.js|\.map)$/;
+  const commits: CommitInfo[] = [];
+  for (const block of log.out.split("\x1e").filter((b) => b.trim())) {
+    const [header, ...rest] = block.split("\n");
+    const [hash, subject = "", date = ""] = header.split("\x1f");
+    if (!hash) continue;
+    const files = rest.map((f) => f.trim()).filter((f) => f && !noise.test(f));
+    commits.push({
+      hash,
+      subject,
+      date,
+      branches: [],
+      repoPath,
+      repoName: basename(repoPath),
+      appName,
+      files: files.slice(0, 8),
+      areas: [...new Set(files.map((f) => (f.includes("/") ? f.split("/")[0] : "(root)")))],
+      diff: "",
+      tickets: [...new Set(subject.match(TICKET_RE) ?? [])],
+      // No patch-id here (too slow over long ranges); same repo + day + title is a good enough key.
+      patchId: `${appName}|${date}|${subject}`,
+    });
+  }
+  return commits;
+}
+
 async function getInProgress(repoPath: string, appName: string): Promise<InProgressInfo | undefined> {
   const status = await git(repoPath, ["status", "--porcelain"]);
   if (!status.ok || !status.out) return undefined;
@@ -277,9 +321,10 @@ export async function getGitData(
   repoPath: string,
   author: string,
   range: DateRange,
-  options: { maxDepth?: number; includePrs?: boolean } = {},
+  options: { maxDepth?: number; includePrs?: boolean; detail?: "full" | "compact" } = {},
 ): Promise<GitData> {
-  const { maxDepth = DEFAULT_MAX_DEPTH, includePrs = false } = options;
+  const { maxDepth = DEFAULT_MAX_DEPTH, includePrs = false, detail = "full" } = options;
+  const compact = detail === "compact";
   try {
     const rootPath = resolve(repoPath === "." ? Deno.cwd() : repoPath);
     const repoConfig = await loadRepoConfig();
@@ -290,19 +335,21 @@ export async function getGitData(
       throw new Error(`No git repositories found in ${repoPath}`);
     }
 
-    const wantWip = rangeIncludesToday(range);
+    const wantWip = !compact && rangeIncludesToday(range);
     const all: CommitInfo[] = [];
     const inProgress: InProgressInfo[] = [];
     const prs: PullRequestInfo[] = [];
 
     for (const repository of repositories) {
       const appName = await detectAppName(repository, rootPath, repoConfig);
-      all.push(...await getCommitsFromRepo(repository, author, range, appName));
+      all.push(
+        ...await (compact ? getCompactCommitsFromRepo : getCommitsFromRepo)(repository, author, range, appName),
+      );
       if (wantWip) {
         const wip = await getInProgress(repository, appName);
         if (wip) inProgress.push(wip);
       }
-      if (includePrs) prs.push(...await getPullRequests(repository, appName, range));
+      if (includePrs && !compact) prs.push(...await getPullRequests(repository, appName, range));
     }
 
     // Same change cherry-picked / rebased onto several branches counts once.

@@ -34,7 +34,7 @@ ${i.previousSummary ? `- A previous summary is given below. Do not repeat work a
 - <1 to 3 short lines inferred ONLY from the in-progress changes and open pull requests. Omit this whole section if there is no such evidence.>
 
 **Blockers:**
-- <Only if the input shows real evidence (reverts, repeated fixes of the same thing, "WIP", failing/unfinished work). Otherwise write exactly: None>
+- <Only if the input shows real evidence (reverts, repeated fixes of the same thing, "WIP", failing/unfinished work). If there is none, omit this whole section, including its heading; never write "None".>
 
 **Key Highlights:**
 - <1 to 2 short lines, the most impactful items>
@@ -63,12 +63,12 @@ ${evidence}
 export const ROLLUP_PROMPT_TEMPLATE = (label: string, entries: string): string => `
 You are an expert software engineer assistant.
 
-Below are daily stand-up summaries for ${label}. Merge them into ONE short roll-up.
+Below are summaries of the smaller periods (weeks or months) that make up ${label}. Merge them into ONE short roll-up for the whole period.
 
 ### Instructions:
 - 5 to 8 bullets MAXIMUM, each one short plain sentence (max ~20 words).
-- Merge repeated or continued work into a single bullet; organize by theme, not by day or app.
-- Do not invent anything that isn't in the daily summaries.
+- Merge repeated or continued work into a single bullet; organize by theme, not by period or app.
+- Do not invent anything that isn't in the period summaries.
 
 ### Output Format:
 
@@ -78,6 +78,24 @@ Below are daily stand-up summaries for ${label}. Merge them into ONE short roll-
 **Key Highlights:**
 - <1 to 2 short lines>
 
-### Daily summaries:
+### Period summaries:
 ${entries}
+`;
+
+export const CHUNK_PROMPT_TEMPLATE = (label: string, commitData: string): string => `
+You are an expert software engineer assistant.
+
+Summarize the work done during ${label} from the git activity below (commit titles, areas and files only).
+
+### Instructions:
+- 4 to 6 bullets, each one short plain sentence (max ~20 words).
+- Group by theme/task, not by app or by commit. Merge related commits.
+- Use areas/files only to understand what changed; never output hashes, branch names or file paths.
+- Skip trivial items. Do not invent anything.
+
+### Output Format:
+- <short, human sentence>
+
+### Commit Log:
+${commitData}
 `;

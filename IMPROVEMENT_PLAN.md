@@ -3,9 +3,9 @@
 Status legend: `[x]` done, `[~]` partly done / needs your input, `[ ]` not started.
 
 ## Interactive CLI
-- [x] **T1. Interactive date menu** – on run, ask: Today / Yesterday / Last working day / Specific date / Date range / This week / Weekly roll-up of saved summaries.
+- [x] **T1. Interactive date menu** – on run, ask: Today / Yesterday / Last working day / Specific date / Custom range / This week / Last week / This month / Last month / A specific month / A whole year.
 - [x] **T2. Interactive options** – ask output format (slack / markdown / plain) and, when a Slack webhook is configured, whether to post.
-- [x] **T3. Non-interactive flags** – `--today`, `--yesterday`, `--date`, `--from/--to`, `--week`, `--rollup`, `--format`, `--post`, `--verify`, `--prs`, `--yes`. Skips prompts when stdin is not a terminal or a date flag is given.
+- [x] **T3. Non-interactive flags** – `--today`, `--yesterday`, `--date`, `--from/--to`, `--week`, `--last-week`, `--this-month`, `--last-month`, `--this-year`, `--month mm-yyyy`, `--year yyyy`, `--format`, `--post`, `--verify`, `--prs`, `--yes`. Skips prompts when stdin is not a terminal or a date flag is given.
 
 ## Better input
 - [x] **T4. Read the diffs, not just file names** – send a trimmed, noise-filtered diff per commit (lock files excluded, size capped via `DIFF_CHARS`).
@@ -17,11 +17,11 @@ Status legend: `[x]` done, `[~]` partly done / needs your input, `[ ]` not start
 ## Better output
 - [x] **T9. Next / In progress and Blockers sections** – inferred from dirty repos, open PRs and commit evidence; omitted when there is no evidence.
 - [x] **T10. Yesterday-aware** – feed the most recent earlier saved summary so multi-day work says "continued" instead of repeating.
-- [x] **T11. Weekly roll-up** – merge saved summaries of a range into one short summary.
+- [x] **T11. Weekly / monthly / yearly summaries straight from git** – no saved summary files needed. Ranges over 7 days use a lightweight scan (titles, areas, files), are summarized per week (per month for 45+ days) and merged into one short summary.
 - [x] **T12. Output formats** – `slack` / `markdown` / `plain`, plus optional posting to `SLACK_WEBHOOK_URL`.
 
 ## Smarter scanning
-- [x] **T13. `repos.json` config** – friendly app names and a list of repos to ignore (see `repos.example.json`).
+- [x] **T13. `repos.json` config** – friendly app names and a list of repos to ignore (`repos.json`, already filled in for the Documents folder; `repos.example.json` is a template).
 - [x] **T14. Date ranges and last working day** – Monday's "last working day" covers Fri–Sun.
 - [x] **T15. Dedupe cherry-picks / rebases** – match commits by `git patch-id`.
 
