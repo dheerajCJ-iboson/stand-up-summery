@@ -16,7 +16,7 @@ Commits are grouped under "## APP: <name>". Each has its message, branch (intent
 There may also be "In progress" (uncommitted changes) and "Pull requests" sections.
 
 ### Instructions:
-- Write 5 to 8 bullets MAXIMUM under accomplishments (never 10 or more). Fewer is better.
+- Write 5 to 10 bullets MAXIMUM under accomplishments (never 15 or more).
 - Each bullet is ONE short, plain sentence, the way a person would say it out loud in a stand-up. Max ~20 words.
 - Organize by TASK/THEME, not by app. If one piece of work touched several apps, write it as a single bullet ("across services" is fine).
 - Only name an app when it is specific to that piece of work and helps the listener (e.g. "in the CRM agent"). No "App (Sub-area):" prefixes, no bold labels, never a list of many app names.
@@ -66,7 +66,7 @@ You are an expert software engineer assistant.
 Below are summaries of the smaller periods (weeks or months) that make up ${label}. Merge them into ONE short roll-up for the whole period.
 
 ### Instructions:
-- 5 to 8 bullets MAXIMUM, each one short plain sentence (max ~20 words).
+- 5 to 15 bullets MAXIMUM, each one short plain sentence (max ~20 words).
 - Merge repeated or continued work into a single bullet; organize by theme, not by period or app.
 - Do not invent anything that isn't in the period summaries.
 
